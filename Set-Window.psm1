@@ -18,7 +18,7 @@ Function Set-Window {
                 [DllImport("user32.dll")]
                 [return: MarshalAs(UnmanagedType.Bool)]
                 public static extern bool GetWindowRect(IntPtr hWnd, out WindowRECT lpRect);
-                [DllImport("User32.dll")]
+                [DllImport("user32.dll")]
                 public extern static bool MoveWindow(IntPtr handle, int x, int y, int width, int height, bool redraw);
             }
 

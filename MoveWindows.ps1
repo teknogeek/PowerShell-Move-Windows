@@ -56,7 +56,7 @@ Invoke-Expression @'
     }
 
     [string]ToString() {
-      return ("{0}.{1}|{2}" -f $this.ProcessId, $this.Handle, $this.Maximized)
+      return ("WindowInfo(pid={0}, handle={1}, maximized={2})" -f $this.ProcessId, $this.Handle, $this.Maximized)
     }
   }
 '@
@@ -70,6 +70,14 @@ if ($args.Count -gt 0 -and $args.Count -lt 2) {
     Write-Error "Screen index out-of-bounds, max index: $($AllScreens.Count)"
     return
   }
+}
+
+foreach ($s in $AllScreens) {
+  Write-Debug ("[Monitor {0}] Size: {1}x{2} | Position: ({3}, {4})" -f
+    ($AllScreens.IndexOf($s) + 1),
+    $s.WorkingArea.Width, $s.WorkingArea.Height,
+    $s.WorkingArea.X, $s.WorkingArea.Y
+  )
 }
 
 $TargetScreen = $AllScreens[$ScreenIndex]
@@ -162,8 +170,11 @@ foreach ($p in $processHandles.GetEnumerator()) {
       $screenWidth = $screen.WorkingArea.Width
       $screenHeight = $screen.WorkingArea.Height
 
-      # check if the window is on the current $screen
-      if (($windowRect.Left -lt $screenX) -or ($windowRect.Left -ge ($screenX + $screenWidth))) {
+      $windowX = $windowRect.Left
+      $windowY = $windowRect.Top
+
+      # check if the window is on the $screen in the loop
+      if (($windowX -lt $screenX) -or ($windowX -ge ($screenX + $screenWidth))) {
         Continue
       }
 
@@ -172,16 +183,27 @@ foreach ($p in $processHandles.GetEnumerator()) {
         Continue
       }
 
-      $widthRatio = $windowWidth / $screenWidth
-      $newWindowWidth = [int]($widthRatio * $TargetScreenWidth)
+      # $screen is now the current screen the window is on
+      # $TargetScreen is the screen we want the window to be on
 
-      $heightRatio = $windowHeight / $screenHeight
-      $newWindowHeight = [int]($heightRatio * $TargetScreenHeight)
+      Write-Debug ("Target Screen: {0} | Screen: {1}" -f $TargetScreen, $screen)
 
-      $xRatio = ($windowRect.Left - $screenX) / $screenWidth
+      $newWindowWidth = $windowWidth
+      if ($newWindowWidth -gt $TargetScreenWidth) {
+        $newWindowWidth = [int](($windowWidth / $screenWidth) * $TargetScreenWidth)
+      }
+
+      $newWindowHeight = $windowHeight
+      if ($newWindowHeight -gt $TargetScreenHeight) {
+        $newWindowHeight = [int](($windowHeight / $screenHeight) * $TargetScreenHeight)
+      }
+
+      # scale X position of window to target monitor
+      $xRatio = ($windowX - $screenX) / $screenWidth
       $newWindowX = [int]($xRatio * $TargetScreenWidth) + $TargetScreenX
 
-      $yRatio = ($windowRect.Top - $screenY) / $screenHeight
+      # scale Y position of window to target monitor
+      $yRatio = ($windowY - $screenY) / $screenHeight
       $newWindowY = [int]($yRatio * $TargetScreenHeight) + $TargetScreenY
 
       $windowNeedsMovement = $true
@@ -208,12 +230,23 @@ foreach ($p in $processHandles.GetEnumerator()) {
 
       $newWindowRect = New-Object RECT
       [void][WindowUtil]::GetWindowRect($windowHandle, [ref]$newWindowRect)
-      Write-Debug ("  - {0}: {1} | Old: ({2}, {3}) - {4}x{5} | New: ({6}, {7}) - {8}x{9} | Actual: ({10}, {11}) - {12}x{13}" -f
-        $windowHandle, $windowTitle,
-        $windowRect.Left, $windowRect.Top, $windowWidth, $windowHeight,
-        $newWindowX, $newWindowY, $newWindowWidth, $newWindowHeight,
-        $newWindowRect.Left, $newWindowRect.Top, ($newWindowRect.Right - $newWindowRect.Left), ($newWindowRect.Bottom - $newWindowRect.Top)
+      $logMessage = ("  - {0}: {1}" -f $windowHandle, $windowTitle)
+
+      if ($windowNeedsMovement) {
+        $logMessage = ("{0} | Old: {1}x{2} @ ({3}, {4}) | New: {5}x{6} @ ({7}, {8})" -f
+          $logMessage,
+          $windowWidth, $windowHeight, $windowRect.Left, $windowRect.Top,
+          $newWindowWidth, $newWindowHeight, $newWindowX, $newWindowY
+        )
+      }
+
+      $logMessage = ("{0} | Current: {1}x{2} @ ({3}, {4}) ({5}, {6})" -f
+        $logMessage,
+        ($newWindowRect.Right - $newWindowRect.Left), ($newWindowRect.Bottom - $newWindowRect.Top),
+        $newWindowRect.Left, $newWindowRect.Top, $newWindowRect.Right, $newWindowRect.Bottom
       )
+
+      Write-Debug $logMessage
     }
   }
 }
